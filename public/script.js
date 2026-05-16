@@ -160,8 +160,6 @@ function renderResult(data) {
 
       <h2 class="car-title">${data.make} ${data.model}</h2>
 
-      <img src="https://files.catbox.moe/ulokbl.png" class="car-image" alt="Vehicle">
-
       <div class="grid">
 
         <div class="info-box">
