@@ -9,6 +9,11 @@ body {
   padding: 0;
 }
 
+.info-box {
+  min-height: 80px;
+}
+
+
 /* NAV */
 .nav {
   width: 100%;
