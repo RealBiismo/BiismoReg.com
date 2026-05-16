@@ -282,7 +282,7 @@ app.post("/api/check", async (req, res) => {
 
     // 2. Fetch MOT history (UPDATED URL)
     const motResponse = await fetch(
-      `https://beta.check-mot.service.gov.uk/trade/vehicles/mot-tests?registration=${registrationNumber}`,
+      `https://history.mot.api.gov.uk/v1/trade/vehicles/registration/${registrationNumber}`,
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
