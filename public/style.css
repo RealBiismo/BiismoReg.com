@@ -592,3 +592,22 @@ button:hover {
   margin: 20px 0;
 }
 
+.back-btn {
+  display: block;
+  width: 100%;
+  background: rgba(255,255,255,0.08);
+  color: #ccc;
+  border: none;
+  padding: 12px;
+  border-radius: 10px;
+  font-weight: 600;
+  margin-top: 10px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.back-btn:hover {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+}
+
