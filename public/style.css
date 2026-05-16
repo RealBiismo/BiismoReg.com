@@ -101,7 +101,7 @@ body {
   font-family: "Charles Wright", "UKNumberPlate", "FE-Schrift", Arial, sans-serif;
 }
 
-/* BUTTON */
+/* BUTTON (GLOBAL) */
 button {
   width: 100%;
   border: none;
@@ -202,12 +202,20 @@ button:hover {
 }
 
 /* TAX COLORS */
-.tax-green { color: #4ade80; }
-.tax-red { color: #f87171; }
+.tax-green {
+  color: #4ade80;
+}
+.tax-red {
+  color: #f87171;
+}
 
 /* MOT COLORS */
-.mot-green { color: #4ade80; }
-.mot-red { color: #f87171; }
+.mot-green {
+  color: #4ade80;
+}
+.mot-red {
+  color: #f87171;
+}
 
 /* MOT CARDS */
 .mot-card {
@@ -238,27 +246,27 @@ button:hover {
   margin-top: 4px;
   font-size: 14px;
 }
-.advisory { background: rgba(255,255,0,0.1); border-left: 4px solid #facc15; }
-.minor { background: rgba(0,255,255,0.1); border-left: 4px solid #22d3ee; }
-.major { background: rgba(255,165,0,0.1); border-left: 4px solid #fb923c; }
-.dangerous { background: rgba(255,0,0,0.1); border-left: 4px solid #ef4444; }
+.advisory {
+  background: rgba(255,255,0,0.1);
+  border-left: 4px solid #facc15;
+}
+.minor {
+  background: rgba(0,255,255,0.1);
+  border-left: 4px solid #22d3ee;
+}
+.major {
+  background: rgba(255,165,0,0.1);
+  border-left: 4px solid #fb923c;
+}
+.dangerous {
+  background: rgba(255,0,0,0.1);
+  border-left: 4px solid #ef4444;
+}
 
 .clean-pass {
   margin-top: 10px;
   color: #4ade80;
   font-weight: 600;
-}
-
-/* ANIMATIONS */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 /* MODAL */
@@ -286,4 +294,16 @@ button:hover {
 .status-message {
   margin-top: 10px;
   color: #60a5fa;
+}
+
+/* ANIMATIONS */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
