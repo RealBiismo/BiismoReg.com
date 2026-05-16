@@ -366,6 +366,64 @@ function handleForgotPassword() {
   window.location.href = `mailto:BiismoReg@gmail.com?subject=${subject}&body=${body}`;
 }
 
+
+function openLoginModal() {
+  loginModal.style.display = "flex";
+}
+
+function closeLoginModal() {
+  loginModal.style.display = "none";
+  authStatus.textContent = "";
+}
+
+tabLogin.onclick = () => setMode("login");
+tabRegister.onclick = () => setMode("register");
+
+function setMode(mode) {
+  currentMode = mode;
+  modalTitle.textContent = mode === "login" ? "Login" : "Create Account";
+  authSubmitBtn.textContent = mode === "login" ? "Login" : "Register";
+
+  tabLogin.classList.toggle("active", mode === "login");
+  tabRegister.classList.toggle("active", mode === "register");
+}
+
+authSubmitBtn.onclick = async () => {
+  const email = authEmail.value.trim();
+  const password = authPassword.value.trim();
+
+  if (!email || !password) {
+    authStatus.textContent = "Email and password required.";
+    return;
+  }
+
+  const endpoint = currentMode === "login" ? "/api/login" : "/api/register";
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    authStatus.textContent = data.error;
+    return;
+  }
+
+  authStatus.textContent = "Success!";
+  setTimeout(() => {
+    closeLoginModal();
+    checkAuthState();
+  }, 600);
+};
+
+forgotBtn.onclick = () => {
+  const email = authEmail.value.trim();
+  window.location.href = `mailto:BiismoReg@gmail.com?subject=Password Reset&body=Reset request for: ${email}`;
+};
+
 /* ============================
    EVENT WIRING
 ============================ */
