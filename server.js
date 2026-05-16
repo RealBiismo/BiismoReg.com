@@ -30,13 +30,11 @@ function render(res, viewName, data = {}) {
   let layout = fs.readFileSync(layoutPath, 'utf8');
   let view = fs.readFileSync(viewPath, 'utf8');
 
-  // Replace placeholders in view
   Object.keys(data).forEach((key) => {
     const regex = new RegExp(`{{${key}}}`, 'g');
     view = view.replace(regex, data[key] ?? '');
   });
 
-  // Auth links
   const authLinks = data.userEmail
     ? `<span class="user-email">${data.userEmail}</span> <a href="/logout">Logout</a>`
     : `<a href="/login">Login</a> <a href="/signup" class="btn-outline">Sign up</a>`;
@@ -76,14 +74,13 @@ function createUser(email, password) {
 // --- DVLA helper ---
 async function getVehicleFromDVLA(reg) {
   const url = 'https://driver-vehicle-licensing.api.gov.uk/vehicle-enquiry/v1/vehicles';
-  const apiKey = process.env.DVLA_API_KEY;
 
   const response = await axios.post(
     url,
     { registrationNumber: reg },
     {
       headers: {
-        'x-api-key': apiKey,
+        'x-api-key': process.env.DVLA_API_KEY,
         'Content-Type': 'application/json'
       }
     }
@@ -92,18 +89,16 @@ async function getVehicleFromDVLA(reg) {
   return response.data;
 }
 
-// --- MOT helpers (Azure AD OAuth2 + API key) ---
+// --- MOT helpers (Azure AD OAuth2 + public MOT endpoint) ---
 async function getMOTAccessToken() {
   const params = new URLSearchParams();
   params.append('grant_type', 'client_credentials');
   params.append('client_id', process.env.MOT_CLIENT_ID);
   params.append('client_secret', process.env.MOT_CLIENT_SECRET);
-  params.append('scope', process.env.MOT_SCOPE); // e.g. https://tapi.dvsa.gov.uk/.default
+  params.append('scope', process.env.MOT_SCOPE);
 
   const response = await axios.post(process.env.MOT_TOKEN_URL, params.toString(), {
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded'
-    }
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
   });
 
   return response.data.access_token;
@@ -112,10 +107,7 @@ async function getMOTAccessToken() {
 async function getMOTHistory(reg) {
   const token = await getMOTAccessToken();
 
-  // New DVSA MOT History API endpoint for your credentials
-  const url = `https://tapi.dvsa.gov.uk/mot-history-api/vehicles/${encodeURIComponent(
-    reg
-  )}/tests`;
+  const url = `https://history.mot.api.gov.uk/v1/trade/vehicles/registration/${reg}`;
 
   const response = await axios.get(url, {
     headers: {
@@ -125,11 +117,13 @@ async function getMOTHistory(reg) {
     }
   });
 
-  return response.data; // array of MOT tests
+  return response.data;
 }
 
-function computeMileageStats(motTests) {
-  if (!Array.isArray(motTests) || motTests.length === 0) {
+function computeMileageStats(vehicle) {
+  const tests = vehicle?.motTests || [];
+
+  if (!tests.length) {
     return {
       lastKnownMileage: 'N/A',
       lastTestDate: 'N/A',
@@ -138,39 +132,34 @@ function computeMileageStats(motTests) {
     };
   }
 
-  // Sort by completedDate
-  motTests.sort((a, b) => new Date(a.completedDate) - new Date(b.completedDate));
+  tests.sort((a, b) => new Date(a.completedDate) - new Date(b.completedDate));
 
-  const firstTest = motTests[0];
-  const lastTest = motTests[motTests.length - 1];
+  const first = tests[0];
+  const last = tests[tests.length - 1];
 
-  const firstMileage = parseInt(firstTest.odometerValue || '0', 10);
-  const lastMileage = parseInt(lastTest.odometerValue || '0', 10);
+  const firstMileage = parseInt(first.odometerValue || '0', 10);
+  const lastMileage = parseInt(last.odometerValue || '0', 10);
 
-  const firstDate = new Date(firstTest.completedDate);
-  const lastDate = new Date(lastTest.completedDate);
+  const firstDate = new Date(first.completedDate);
+  const lastDate = new Date(last.completedDate);
 
-  const diffYears =
-    (lastDate - firstDate) / (1000 * 60 * 60 * 24 * 365.25) || 1;
+  const diffYears = (lastDate - firstDate) / (1000 * 60 * 60 * 24 * 365.25) || 1;
 
-  const avgPerYear = Math.round((lastMileage - firstMileage) / diffYears);
+  const avg = Math.round((lastMileage - firstMileage) / diffYears);
 
   return {
-    lastKnownMileage: lastMileage ? lastMileage.toLocaleString('en-GB') : 'N/A',
-    lastTestDate: lastTest.completedDate || 'N/A',
-    averageMileagePerYear: isFinite(avgPerYear)
-      ? avgPerYear.toLocaleString('en-GB')
-      : 'N/A',
-    totalTests: motTests.length
+    lastKnownMileage: lastMileage.toLocaleString('en-GB'),
+    lastTestDate: last.completedDate,
+    averageMileagePerYear: avg.toLocaleString('en-GB'),
+    totalTests: tests.length
   };
 }
 
 // --- Auth routes ---
 app.get('/login', (req, res) => {
-  const userEmail = req.session.user ? req.session.user.email : '';
   render(res, 'login', {
     pageTitle: 'Login - BiismoReg',
-    userEmail,
+    userEmail: req.session.user?.email || '',
     error: ''
   });
 });
@@ -192,10 +181,9 @@ app.post('/login', (req, res) => {
 });
 
 app.get('/signup', (req, res) => {
-  const userEmail = req.session.user ? req.session.user.email : '';
   render(res, 'signup', {
     pageTitle: 'Sign Up - BiismoReg',
-    userEmail,
+    userEmail: req.session.user?.email || '',
     error: ''
   });
 });
@@ -225,24 +213,21 @@ app.post('/signup', (req, res) => {
 });
 
 app.get('/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.redirect('/');
-  });
+  req.session.destroy(() => res.redirect('/'));
 });
 
 // --- Main pages ---
 app.get('/', (req, res) => {
-  const userEmail = req.session.user ? req.session.user.email : '';
   render(res, 'index', {
     pageTitle: 'BiismoReg - UK Reg Check',
-    userEmail,
+    userEmail: req.session.user?.email || '',
     error: ''
   });
 });
 
 app.post('/check-reg', async (req, res) => {
   const reg = (req.body.registration || '').toUpperCase().replace(/\s+/g, '');
-  const userEmail = req.session.user ? req.session.user.email : '';
+  const userEmail = req.session.user?.email || '';
 
   if (!reg) {
     return render(res, 'index', {
@@ -253,64 +238,45 @@ app.post('/check-reg', async (req, res) => {
   }
 
   try {
-    const [dvlaData, motTests] = await Promise.all([
+    const [dvlaData, motData] = await Promise.all([
       getVehicleFromDVLA(reg),
       getMOTHistory(reg)
     ]);
 
-    const mileageStats = computeMileageStats(motTests);
-
-    const vehicle = dvlaData || {};
-    const rawMOT = motTests || [];
+    const vehicle = Array.isArray(motData) ? motData[0] : motData;
+    const mileageStats = computeMileageStats(vehicle);
 
     const resultHtml = `
       <h2>Results for ${reg}</h2>
       <div class="result-grid">
         <div class="card">
           <h3>Vehicle details</h3>
-          <p><strong>Make:</strong> ${vehicle.make || 'N/A'}</p>
-          <p><strong>Model:</strong> ${vehicle.model || 'N/A'}</p>
-          <p><strong>Colour:</strong> ${vehicle.colour || 'N/A'}</p>
-          <p><strong>Fuel type:</strong> ${vehicle.fuelType || 'N/A'}</p>
-          <p><strong>Engine capacity:</strong> ${
-            vehicle.engineCapacity || 'N/A'
-          } cc</p>
-          <p><strong>Year of manufacture:</strong> ${
-            vehicle.yearOfManufacture || 'N/A'
-          }</p>
+          <p><strong>Make:</strong> ${dvlaData.make}</p>
+          <p><strong>Model:</strong> ${dvlaData.model}</p>
+          <p><strong>Colour:</strong> ${dvlaData.colour}</p>
+          <p><strong>Fuel type:</strong> ${dvlaData.fuelType}</p>
+          <p><strong>Engine capacity:</strong> ${dvlaData.engineCapacity} cc</p>
+          <p><strong>Year of manufacture:</strong> ${dvlaData.yearOfManufacture}</p>
         </div>
 
         <div class="card">
           <h3>Tax & MOT</h3>
-          <p><strong>Tax status:</strong> ${vehicle.taxStatus || 'N/A'}</p>
-          <p><strong>Tax due date:</strong> ${
-            vehicle.taxDueDate || 'N/A'
-          }</p>
-          <p><strong>MOT status:</strong> ${vehicle.motStatus || 'N/A'}</p>
-          <p><strong>MOT expiry date:</strong> ${
-            vehicle.motExpiryDate || 'N/A'
-          }</p>
+          <p><strong>Tax status:</strong> ${dvlaData.taxStatus}</p>
+          <p><strong>Tax due date:</strong> ${dvlaData.taxDueDate}</p>
+          <p><strong>MOT expiry date:</strong> ${dvlaData.motExpiryDate}</p>
         </div>
 
         <div class="card">
           <h3>Mileage stats</h3>
-          <p><strong>Last known mileage:</strong> ${
-            mileageStats.lastKnownMileage
-          } miles</p>
-          <p><strong>Last MOT test date:</strong> ${
-            mileageStats.lastTestDate
-          }</p>
-          <p><strong>Average mileage per year:</strong> ${
-            mileageStats.averageMileagePerYear
-          } miles</p>
-          <p><strong>Total MOT tests:</strong> ${
-            mileageStats.totalTests
-          }</p>
+          <p><strong>Last known mileage:</strong> ${mileageStats.lastKnownMileage}</p>
+          <p><strong>Last MOT test date:</strong> ${mileageStats.lastTestDate}</p>
+          <p><strong>Average mileage per year:</strong> ${mileageStats.averageMileagePerYear}</p>
+          <p><strong>Total MOT tests:</strong> ${mileageStats.totalTests}</p>
         </div>
 
         <div class="card">
           <h3>Raw MOT data</h3>
-          <pre>${JSON.stringify(rawMOT, null, 2)}</pre>
+          <pre>${JSON.stringify(vehicle, null, 2)}</pre>
         </div>
       </div>
     `;
@@ -321,17 +287,16 @@ app.post('/check-reg', async (req, res) => {
       result: resultHtml
     });
   } catch (err) {
-    console.error('DVLA/MOT error:', err.response?.data || err.message);
+    console.log("FULL ERROR:", err.response?.data || err.message);
     render(res, 'index', {
       pageTitle: 'BiismoReg - UK Reg Check',
       userEmail,
-      error:
-        '<div class="error">Unable to fetch data for that registration. Check the reg and your API credentials, then try again.</div>'
+      error: '<div class="error">Unable to fetch data. Check your API credentials.</div>'
     });
   }
 });
 
 // --- Start server ---
 app.listen(PORT, () => {
-  console.log(`BiismoReg running at http://localhost:${PORT}`);
+  console.log(`BiismoReg running on port ${PORT}`);
 });
