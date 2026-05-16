@@ -5,7 +5,6 @@
 const regInput = document.getElementById("regInput");
 const resultEl = document.getElementById("result");
 
-/* LOGIN MODAL ELEMENTS */
 const loginBtn = document.getElementById("loginBtn");
 const loginModal = document.getElementById("loginModal");
 const closeModalBtn = document.getElementById("closeModalBtn");
@@ -34,12 +33,7 @@ function formatDate(dateString) {
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const year = d.getFullYear();
 
-  let hours = d.getHours();
-  const minutes = String(d.getMinutes()).padStart(2, "0");
-  const ampm = hours >= 12 ? "pm" : "am";
-  hours = hours % 12 || 12;
-
-  return `${day}.${month}.${year} ${hours}:${minutes}${ampm}`;
+  return `${day}.${month}.${year}`;
 }
 
 function formatMiles(value) {
@@ -60,14 +54,6 @@ async function checkVehicle() {
     return;
   }
 
-   // Save recent search
-fetch("/api/recent/add", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ reg })
-});
-
-
   resultEl.innerHTML = `<div class="disclaimer-text" style="color:#60a5fa;">Checking ${reg.toUpperCase()}...</div>`;
 
   try {
@@ -82,6 +68,13 @@ fetch("/api/recent/add", {
     if (!res.ok) {
       throw new Error(data.error || "Lookup failed");
     }
+
+    // Save recent search (backend)
+    fetch("/api/recent/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reg })
+    });
 
     renderResult(data);
   } catch (err) {
@@ -117,7 +110,7 @@ function renderResult(data) {
     taxClass = "tax-red";
     taxDays = "SORN (off road)";
   } else {
-    taxClass = "tax-red"; // UNTAXED = RED
+    taxClass = "tax-red";
   }
 
   /* MOT */
@@ -220,6 +213,12 @@ function renderResult(data) {
 
       <div id="motWarning" class="warning hidden">Please sign in to use this feature.</div>
 
+      <div style="margin-top:16px;">
+        <button class="secondary-btn" onclick="saveToGarage('${data.registration}')">
+          Save to Garage
+        </button>
+      </div>
+
     </div>
   `;
 }
@@ -313,7 +312,29 @@ async function openMotHistory() {
   }
 
   container.classList.remove("blurred");
-  container.classList.toggle("hidden");
+  container.classList.remove("hidden");
+}
+
+/* ============================
+   SAVE VEHICLE TO GARAGE
+============================ */
+
+async function saveToGarage(reg) {
+  const res = await fetch("/api/me");
+  const data = await res.json();
+
+  if (!data.email) {
+    alert("Please sign in to save vehicles.");
+    return;
+  }
+
+  await fetch("/api/garage/add", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reg })
+  });
+
+  alert("Vehicle saved to your garage.");
 }
 
 /* ============================
@@ -327,6 +348,8 @@ function openLoginModal() {
 function closeLoginModal() {
   loginModal.style.display = "none";
   authStatus.textContent = "";
+  authEmail.value = "";
+  authPassword.value = "";
 }
 
 tabLogin.onclick = () => setMode("login");
@@ -377,6 +400,16 @@ forgotBtn.onclick = () => {
   window.location.href = `mailto:BiismoReg@gmail.com?subject=Password Reset&body=Reset request for: ${email}`;
 };
 
+if (closeModalBtn) {
+  closeModalBtn.addEventListener("click", closeLoginModal);
+}
+
+window.addEventListener("click", (e) => {
+  if (e.target === loginModal) {
+    closeLoginModal();
+  }
+});
+
 /* ============================
    CHANGE LOGIN BUTTON TO "MY ACCOUNT"
 ============================ */
@@ -396,18 +429,10 @@ async function checkAuthState() {
 
 checkAuthState();
 
-if (closeModalBtn) {
-  closeModalBtn.addEventListener("click", () => {
-    loginModal.style.display = "none";
-    authStatus.textContent = "";
-    authEmail.value = "";
-    authPassword.value = "";
-  });
-}
-
 /* ============================
-   EXPORT FUNCTIONS
+   EXPORT
 ============================ */
 
 window.checkVehicle = checkVehicle;
 window.openMotHistory = openMotHistory;
+window.saveToGarage = saveToGarage;
