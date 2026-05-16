@@ -270,7 +270,7 @@ app.post("/api/check", async (req, res) => {
     const accessToken = tokenData.access_token;
 
     // 2. Fetch MOT history
-    const motResponse = await fetch(`https://beta.check-mot.service.gov.uk/trade/vehicles/mot-tests?registration=${registrationNumber}`, {
+    const motResponse = await fetch(`https://check-mot.service.gov.uk/trade/vehicles/mot-tests?registration=${registrationNumber}`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "x-api-key": process.env.MOT_API_KEY
