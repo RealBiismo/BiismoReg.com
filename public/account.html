@@ -49,36 +49,40 @@
        LOAD ACCOUNT INFO
     ============================= */
 
-    async function loadAccount() {
-      const res = await fetch("/api/me");
-      const data = await res.json();
+   async function loadAccount() {
+  const res = await fetch("/api/me");
+  const data = await res.json();
 
-      if (!data.email) {
-        window.location.href = "/";
-        return;
-      }
+  if (!data.email) {
+    window.location.href = "/";
+    return;
+  }
 
-      document.getElementById("accountEmail").textContent = data.email;
+  document.getElementById("accountEmail").textContent = data.email;
 
-      // Load garage + recent from localStorage for now
-      const garage = JSON.parse(localStorage.getItem("garage") || "[]");
-      const recent = JSON.parse(localStorage.getItem("recentSearches") || "[]");
+  // Load garage
+  const gRes = await fetch("/api/garage");
+  const gData = await gRes.json();
+  const garageList = document.getElementById("garageList");
 
-      const garageList = document.getElementById("garageList");
-      const recentList = document.getElementById("recentList");
+  if (gData.garage.length) {
+    garageList.innerHTML = gData.garage
+      .map(reg => `<div class="list-item">${reg}</div>`)
+      .join("");
+  }
 
-      if (garage.length) {
-        garageList.innerHTML = garage
-          .map(reg => `<div class="list-item">${reg}</div>`)
-          .join("");
-      }
+  // Load recent searches
+  const rRes = await fetch("/api/recent");
+  const rData = await rRes.json();
+  const recentList = document.getElementById("recentList");
 
-      if (recent.length) {
-        recentList.innerHTML = recent
-          .map(reg => `<div class="list-item">${reg}</div>`)
-          .join("");
-      }
-    }
+  if (rData.recent.length) {
+    recentList.innerHTML = rData.recent
+      .map(reg => `<div class="list-item">${reg}</div>`)
+      .join("");
+  }
+}
+
 
     /* ============================
        LOGOUT
