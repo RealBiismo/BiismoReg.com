@@ -396,3 +396,20 @@ async function checkAuthState() {
 }
 
 checkAuthState();
+
+async function openMotHistory() {
+  const res = await fetch("/api/me");
+  const data = await res.json();
+
+  const container = document.getElementById("motHistoryContainer");
+  const warning = document.getElementById("motWarning");
+
+  if (!data.email) {
+    warning.classList.remove("hidden");
+    setTimeout(() => warning.classList.add("hidden"), 2500);
+    return;
+  }
+
+  container.classList.remove("blurred");
+  container.classList.toggle("hidden");
+}
