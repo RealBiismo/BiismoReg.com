@@ -388,6 +388,15 @@ async function checkAuthState() {
 
 checkAuthState();
 
+if (closeModalBtn) {
+  closeModalBtn.addEventListener("click", () => {
+    loginModal.style.display = "none";
+    authStatus.textContent = "";
+    authEmail.value = "";
+    authPassword.value = "";
+  });
+}
+
 /* ============================
    EXPORT FUNCTIONS
 ============================ */
