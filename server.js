@@ -1,5 +1,7 @@
-require("dotenv").config();
 import express from "express";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
 app.use(express.json());
@@ -118,12 +120,11 @@ app.post("/api/check", async (req, res) => {
 
     /* =========================
        MOT HISTORY CLEANUP
-    ========================= */
+========================= */
 
     const motHistory = (vehicle?.motTests || []).map(test => {
       const defects = [];
 
-      // OLD FORMAT
       if (test.rfrAndComments) {
         test.rfrAndComments.forEach(issue => {
           defects.push({
@@ -133,7 +134,6 @@ app.post("/api/check", async (req, res) => {
         });
       }
 
-      // NEW FORMAT
       [
         "advisories",
         "minorDefects",
@@ -173,7 +173,7 @@ app.post("/api/check", async (req, res) => {
     });
 
     /* =========================
-       RESPONSE TO FRONTEND
+       RESPONSE
 ========================= */
 
     res.json({
@@ -184,23 +184,8 @@ app.post("/api/check", async (req, res) => {
       fuelType: dvla.fuelType || "Unknown",
       engineCapacity: dvla.engineCapacity || "Unknown",
       year: dvla.yearOfManufacture || "Unknown",
-      monthOfFirstRegistration: dvla.monthOfFirstRegistration || "Unknown",
-
       taxStatus: dvla.taxStatus || "Unknown",
-      taxDueDate: dvla.taxDueDate || null,
       motExpiryDate: dvla.motExpiryDate || null,
-
-      co2Emissions: dvla.co2Emissions || null,
-      euroStatus: dvla.euroStatus || "Unknown",
-      realDrivingEmissions: dvla.realDrivingEmissions || "Unknown",
-
-      typeApproval: dvla.typeApproval || "Unknown",
-      wheelplan: dvla.wheelplan || "Unknown",
-      revenueWeight: dvla.revenueWeight || "Unknown",
-
-      exportMarker: dvla.exportMarker || false,
-      dateOfLastV5CIssued: dvla.dateOfLastV5CIssued || null,
-
       motHistory
     });
 
