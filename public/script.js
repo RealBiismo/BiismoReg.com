@@ -1,7 +1,11 @@
+/* ============================
+   ELEMENTS
+============================ */
+
 const regInput = document.getElementById("regInput");
 const resultEl = document.getElementById("result");
 
-/* ========== AUTH ELEMENTS ========== */
+/* LOGIN MODAL ELEMENTS */
 const loginBtn = document.getElementById("loginBtn");
 const loginModal = document.getElementById("loginModal");
 const closeModalBtn = document.getElementById("closeModalBtn");
@@ -14,7 +18,7 @@ const authSubmitBtn = document.getElementById("authSubmitBtn");
 const authStatus = document.getElementById("authStatus");
 const forgotBtn = document.getElementById("forgotBtn");
 
-let currentMode = "login"; // "login" or "register"
+let currentMode = "login";
 
 /* ============================
    FORMATTERS
@@ -85,7 +89,7 @@ async function checkVehicle() {
 function renderResult(data) {
   const today = new Date();
 
-  /* TAX STATUS */
+  /* TAX */
   let taxClass = "tax-red";
   let taxText = data.taxStatus || "Unknown";
   let taxDays = "";
@@ -98,33 +102,29 @@ function renderResult(data) {
     const expiry = data.taxDueDate ? new Date(data.taxDueDate) : null;
     if (expiry) {
       const diff = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
-      if (diff > 0) {
-        taxDays = `${diff} day${diff === 1 ? "" : "s"} remaining`;
-      } else {
-        taxDays = `EXPIRED`;
-        taxColor = "mot-red";
-      }
+      taxDays = diff > 0 ? `${diff} days remaining` : "EXPIRED";
     }
   } else if (taxText.toLowerCase().includes("sorn")) {
-    taxClass = "tax-red";
     taxText = "SORN";
+    taxClass = "tax-red";
     taxDays = "SORN (off road)";
   } else {
-    taxClass = "tax-red"; // untaxed red
+    taxClass = "tax-red"; // UNTAXED = RED
   }
 
-  /* MOT STATUS */
-  const motExpiry = data.motExpiryDate ? new Date(data.motExpiryDate) : null;
+  /* MOT */
   let motStatus = "Unknown";
   let motColor = "mot-red";
 
-  if (!motExpiry) {
+  if (!data.motExpiryDate) {
     motStatus = "Not due first MOT yet";
     motColor = "mot-green";
   } else {
-    const diff = Math.ceil((motExpiry - today) / (1000 * 60 * 60 * 24));
+    const expiry = new Date(data.motExpiryDate);
+    const diff = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+
     if (diff > 0) {
-      motStatus = `${diff} day${diff === 1 ? "" : "s"} remaining`;
+      motStatus = `${diff} days remaining`;
       motColor = "mot-green";
     } else {
       motStatus = "EXPIRED";
@@ -202,13 +202,15 @@ function renderResult(data) {
       </div>
 
       <div class="mot-history-toggle">
-        <button class="secondary-btn" onclick="toggleMotHistory()">View MOT History</button>
+        <button class="secondary-btn" id="motHistoryBtn" onclick="openMotHistory()">View MOT History</button>
       </div>
 
-      <div id="motHistoryContainer" class="mot-history-container hidden">
+      <div id="motHistoryContainer" class="mot-history-container hidden blurred">
         <h3 style="margin-bottom:10px;">MOT History</h3>
         ${motHistoryHtml}
       </div>
+
+      <div id="motWarning" class="warning hidden">Please sign in to use this feature.</div>
 
     </div>
   `;
@@ -285,87 +287,30 @@ function buildDefects(defects) {
   return html;
 }
 
-function toggleMotHistory() {
-  const el = document.getElementById("motHistoryContainer");
-  if (!el) return;
-  el.classList.toggle("hidden");
-}
-
 /* ============================
-   AUTH MODAL LOGIC
+   LOGIN REQUIRED FOR MOT HISTORY
 ============================ */
 
-function openLoginModal() {
-  loginModal.style.display = "flex";
-  authStatus.textContent = "";
-}
+async function openMotHistory() {
+  const res = await fetch("/api/me");
+  const data = await res.json();
 
-function closeLoginModal() {
-  loginModal.style.display = "none";
-  authEmail.value = "";
-  authPassword.value = "";
-  authStatus.textContent = "";
-}
+  const container = document.getElementById("motHistoryContainer");
+  const warning = document.getElementById("motWarning");
 
-function setMode(mode) {
-  currentMode = mode;
-  if (mode === "login") {
-    modalTitle.textContent = "Login";
-    authSubmitBtn.textContent = "Login";
-    tabLogin.classList.add("active");
-    tabRegister.classList.remove("active");
-  } else {
-    modalTitle.textContent = "Create Account";
-    authSubmitBtn.textContent = "Register";
-    tabRegister.classList.add("active");
-    tabLogin.classList.remove("active");
-  }
-  authStatus.textContent = "";
-}
-
-async function submitAuth() {
-  const email = authEmail.value.trim();
-  const password = authPassword.value.trim();
-
-  if (!email || !password) {
-    authStatus.textContent = "Email and password required.";
+  if (!data.email) {
+    warning.classList.remove("hidden");
+    setTimeout(() => warning.classList.add("hidden"), 2500);
     return;
   }
 
-  const endpoint = currentMode === "login" ? "/api/login" : "/api/register";
-
-  authStatus.textContent = currentMode === "login" ? "Logging in..." : "Creating account...";
-
-  try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password })
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.error || "Request failed");
-    }
-
-    authStatus.textContent = currentMode === "login" ? "Logged in." : "Account created.";
-    setTimeout(closeLoginModal, 800);
-  } catch (err) {
-    console.error(err);
-    authStatus.textContent = "Error: " + err.message;
-  }
+  container.classList.remove("blurred");
+  container.classList.toggle("hidden");
 }
 
-function handleForgotPassword() {
-  const email = authEmail.value.trim();
-  const subject = encodeURIComponent("Password reset request");
-  const body = encodeURIComponent(
-    `Hi,\n\nI need a password reset for BIISMO REG.\n\nEmail: ${email || "(not provided)"}\n\nThanks.`
-  );
-  window.location.href = `mailto:BiismoReg@gmail.com?subject=${subject}&body=${body}`;
-}
-
+/* ============================
+   LOGIN / REGISTER MODAL
+============================ */
 
 function openLoginModal() {
   loginModal.style.display = "flex";
@@ -425,24 +370,12 @@ forgotBtn.onclick = () => {
 };
 
 /* ============================
-   EVENT WIRING
+   CHANGE LOGIN BUTTON TO "MY ACCOUNT"
 ============================ */
-
-if (loginBtn) loginBtn.addEventListener("click", openLoginModal);
-if (closeModalBtn) closeModalBtn.addEventListener("click", closeLoginModal);
-if (tabLogin) tabLogin.addEventListener("click", () => setMode("login"));
-if (tabRegister) tabRegister.addEventListener("click", () => setMode("register"));
-if (authSubmitBtn) authSubmitBtn.addEventListener("click", submitAuth);
-if (forgotBtn) forgotBtn.addEventListener("click", handleForgotPassword);
-
-window.checkVehicle = checkVehicle;
-window.toggleMotHistory = toggleMotHistory;
 
 async function checkAuthState() {
   const res = await fetch("/api/me");
   const data = await res.json();
-
-  const loginBtn = document.getElementById("loginBtn");
 
   if (data.email) {
     loginBtn.textContent = "My Account";
@@ -455,19 +388,9 @@ async function checkAuthState() {
 
 checkAuthState();
 
-async function openMotHistory() {
-  const res = await fetch("/api/me");
-  const data = await res.json();
+/* ============================
+   EXPORT FUNCTIONS
+============================ */
 
-  const container = document.getElementById("motHistoryContainer");
-  const warning = document.getElementById("motWarning");
-
-  if (!data.email) {
-    warning.classList.remove("hidden");
-    setTimeout(() => warning.classList.add("hidden"), 2500);
-    return;
-  }
-
-  container.classList.remove("blurred");
-  container.classList.toggle("hidden");
-}
+window.checkVehicle = checkVehicle;
+window.openMotHistory = openMotHistory;
