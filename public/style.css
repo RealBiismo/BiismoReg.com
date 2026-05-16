@@ -192,10 +192,13 @@ button:hover {
 /* GRID */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
-  margin-top: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+  width: 100%;
+  box-sizing: border-box;
 }
+
 
 /* INFO BOX */
 .info-box {
