@@ -214,6 +214,76 @@ app.post("/api/garage/remove", (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/garage", (req, res) => {
+  const email = req.session.userEmail;
+  if (!email) return res.json({ garage: [] });
+
+  const file = path.join(__dirname, "garage.txt");
+  if (!fs.existsSync(file)) return res.json({ garage: [] });
+
+  const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
+
+  for (const line of lines) {
+    const [uEmail, list] = line.split("|");
+    if (uEmail === email) {
+      return res.json({ garage: list ? list.split(",") : [] });
+    }
+  }
+
+  res.json({ garage: [] });
+});
+
+app.post("/api/recent/add", (req, res) => {
+  const email = req.session.userEmail;
+  const reg = (req.body.reg || "").toUpperCase();
+
+  if (!email) return res.status(401).json({ error: "Not logged in" });
+
+  const file = path.join(__dirname, "recent.txt");
+  if (!fs.existsSync(file)) fs.writeFileSync(file, "");
+
+  const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
+
+  let found = false;
+  const updated = lines.map(line => {
+    const [uEmail, list] = line.split("|");
+    if (uEmail === email) {
+      found = true;
+      let arr = list ? list.split(",") : [];
+      arr = arr.filter(v => v !== reg); // remove duplicates
+      arr.unshift(reg); // add to front
+      arr = arr.slice(0, 10); // keep last 10
+      return `${email}|${arr.join(",")}`;
+    }
+    return line;
+  });
+
+  if (!found) updated.push(`${email}|${reg}`);
+
+  fs.writeFileSync(file, updated.join("\n"));
+  res.json({ ok: true });
+});
+
+app.get("/api/recent", (req, res) => {
+  const email = req.session.userEmail;
+  if (!email) return res.json({ recent: [] });
+
+  const file = path.join(__dirname, "recent.txt");
+  if (!fs.existsSync(file)) return res.json({ recent: [] });
+
+  const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
+
+  for (const line of lines) {
+    const [uEmail, list] = line.split("|");
+    if (uEmail === email) {
+      return res.json({ recent: list ? list.split(",") : [] });
+    }
+  }
+
+  res.json({ recent: [] });
+});
+
+
 /* =========================
    MAIN VEHICLE API
 ========================= */
