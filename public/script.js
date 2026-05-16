@@ -379,3 +379,20 @@ if (forgotBtn) forgotBtn.addEventListener("click", handleForgotPassword);
 
 window.checkVehicle = checkVehicle;
 window.toggleMotHistory = toggleMotHistory;
+
+async function checkAuthState() {
+  const res = await fetch("/api/me");
+  const data = await res.json();
+
+  const loginBtn = document.getElementById("loginBtn");
+
+  if (data.email) {
+    loginBtn.textContent = "My Account";
+    loginBtn.onclick = () => window.location.href = "/account.html";
+  } else {
+    loginBtn.textContent = "Login / Create Account";
+    loginBtn.onclick = openLoginModal;
+  }
+}
+
+checkAuthState();
