@@ -3,7 +3,8 @@
 
 <head>
   <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
   <title>BIISMO REG</title>
 
   <link rel="stylesheet" href="style.css" />
@@ -51,16 +52,16 @@
     </div>
   </div>
 
-  <!-- RESULT AREA -->
+  <!-- RESULT AREA (script.js injects result card + View MOT History button) -->
   <div id="result"></div>
-<button class="secondary-btn" onclick="saveToGarage('${data.registration}')">Save to Garage</button>
 
-
+  <!-- MOT HISTORY (hidden + blurred until logged in) -->
   <div id="motHistoryContainer" class="mot-history-container hidden blurred">
     <h3 style="margin-bottom:10px;">MOT History</h3>
     <!-- JS inserts MOT history here -->
   </div>
 
+  <!-- SIGN-IN WARNING -->
   <div id="motWarning" class="warning hidden">Please sign in to use this feature.</div>
 
   <!-- LOGIN / REGISTER MODAL -->
@@ -89,4 +90,5 @@
 
   <script src="script.js"></script>
 </body>
+
 </html>
