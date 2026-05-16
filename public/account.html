@@ -3,8 +3,9 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>My Account - BIISMO REG</title>
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
+  <title>My Account – BIISMO REG</title>
 
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" href="https://files.catbox.moe/ulokbl.png">
@@ -12,38 +13,85 @@
 
 <body>
 
+  <!-- NAV -->
   <nav class="nav">
     <img src="https://files.catbox.moe/tvw8fb.png" alt="" class="logo">
   </nav>
 
-  <section class="account-header">
-    <h1>My Account</h1>
-    <div id="tierBadge" class="tier-badge free">Free Tier</div>
-    <p id="accountEmail" style="margin-top:8px;color:#666;"></p>
-    <button class="login-btn" onclick="logout()">Logout</button>
-  </section>
+  <div class="account-container glass">
 
-  <section class="garage-section">
-    <h2>My Garage</h2>
-    <div id="garageGrid" class="garage-grid">
-      <!-- Filled by JS -->
+    <h1 class="account-title">My Account</h1>
+
+    <p id="accountEmail" class="account-email">Loading...</p>
+
+    <button id="logoutBtn" class="logout-btn">Logout</button>
+
+    <hr class="divider">
+
+    <!-- MY GARAGE -->
+    <h2 class="section-title">My Garage</h2>
+    <div id="garageList" class="list-box">
+      <p class="placeholder">No saved vehicles yet.</p>
     </div>
-  </section>
 
-  <section class="recent-section">
-    <h2>Recently Viewed</h2>
-    <div id="recentList">
-      <!-- Filled by JS -->
+    <hr class="divider">
+
+    <!-- RECENT SEARCHES -->
+    <h2 class="section-title">Recent Searches</h2>
+    <div id="recentList" class="list-box">
+      <p class="placeholder">No recent searches yet.</p>
     </div>
-  </section>
 
-  <section class="subscription-panel">
-    <h2>Your Subscription</h2>
-    <p id="tierText">You are currently on the Free tier.</p>
-    <button class="upgrade-btn" onclick="upgradeTier('premium')">Upgrade to Premium</button>
-    <button class="see-platinum-btn" onclick="upgradeTier('platinum')">Go Platinum</button>
-  </section>
+  </div>
 
-  <script src="script.js"></script>
+  <script>
+    /* ============================
+       LOAD ACCOUNT INFO
+    ============================= */
+
+    async function loadAccount() {
+      const res = await fetch("/api/me");
+      const data = await res.json();
+
+      if (!data.email) {
+        window.location.href = "/";
+        return;
+      }
+
+      document.getElementById("accountEmail").textContent = data.email;
+
+      // Load garage + recent from localStorage for now
+      const garage = JSON.parse(localStorage.getItem("garage") || "[]");
+      const recent = JSON.parse(localStorage.getItem("recentSearches") || "[]");
+
+      const garageList = document.getElementById("garageList");
+      const recentList = document.getElementById("recentList");
+
+      if (garage.length) {
+        garageList.innerHTML = garage
+          .map(reg => `<div class="list-item">${reg}</div>`)
+          .join("");
+      }
+
+      if (recent.length) {
+        recentList.innerHTML = recent
+          .map(reg => `<div class="list-item">${reg}</div>`)
+          .join("");
+      }
+    }
+
+    /* ============================
+       LOGOUT
+    ============================= */
+
+    document.getElementById("logoutBtn").onclick = async () => {
+      await fetch("/api/logout", { method: "POST" });
+      window.location.href = "/";
+    };
+
+    loadAccount();
+  </script>
+
 </body>
+
 </html>
