@@ -60,6 +60,14 @@ async function checkVehicle() {
     return;
   }
 
+   // Save recent search
+fetch("/api/recent/add", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ reg })
+});
+
+
   resultEl.innerHTML = `<div class="disclaimer-text" style="color:#60a5fa;">Checking ${reg.toUpperCase()}...</div>`;
 
   try {
