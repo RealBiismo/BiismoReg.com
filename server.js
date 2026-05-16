@@ -1,302 +1,223 @@
-require('dotenv').config();
-
-const express = require('express');
-const session = require('express-session');
-const bodyParser = require('body-parser');
-const path = require('path');
-const fs = require('fs');
-const axios = require('axios');
+require("dotenv").config();
+import express from "express";
+import fetch from "node-fetch";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+app.use(express.json());
+app.use(express.static("public"));
 
-// --- Middleware ---
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
+/* =========================
+   ENV
+========================= */
 
-app.use(
-  session({
-    secret: 'biismoreg-secret-key',
-    resave: false,
-    saveUninitialized: false
-  })
-);
+const DVLA_API_KEY = process.env.DVLA_API_KEY;
 
-// --- Simple HTML templating ---
-function render(res, viewName, data = {}) {
-  const layoutPath = path.join(__dirname, 'views', 'layout.html');
-  const viewPath = path.join(__dirname, 'views', `${viewName}.html`);
+const MOT_CLIENT_ID = process.env.MOT_CLIENT_ID;
+const MOT_CLIENT_SECRET = process.env.MOT_CLIENT_SECRET;
+const MOT_API_KEY = process.env.MOT_API_KEY;
+const MOT_SCOPE = process.env.MOT_SCOPE;
+const MOT_TOKEN_URL = process.env.MOT_TOKEN_URL;
 
-  let layout = fs.readFileSync(layoutPath, 'utf8');
-  let view = fs.readFileSync(viewPath, 'utf8');
+/* =========================
+   TOKEN CACHE
+========================= */
 
-  Object.keys(data).forEach((key) => {
-    const regex = new RegExp(`{{${key}}}`, 'g');
-    view = view.replace(regex, data[key] ?? '');
-  });
+let cachedToken = null;
+let tokenExpiry = 0;
 
-  const authLinks = data.userEmail
-    ? `<span class="user-email">${data.userEmail}</span> <a href="/logout">Logout</a>`
-    : `<a href="/login">Login</a> <a href="/signup" class="btn-outline">Sign up</a>`;
+/* =========================
+   GET MOT TOKEN
+========================= */
 
-  layout = layout.replace('{{authLinks}}', authLinks);
-  layout = layout.replace('{{content}}', view);
-  layout = layout.replace('{{pageTitle}}', data.pageTitle || 'BiismoReg');
+async function getMotToken() {
+  const now = Date.now();
 
-  res.send(layout);
-}
-
-// --- Users "DB" (users.txt) ---
-const USERS_FILE = path.join(__dirname, 'users.txt');
-
-if (!fs.existsSync(USERS_FILE)) {
-  fs.writeFileSync(USERS_FILE, '');
-}
-
-function findUserByEmail(email) {
-  const lines = fs.readFileSync(USERS_FILE, 'utf8').split('\n').filter(Boolean);
-  for (const line of lines) {
-    const [storedEmail, storedPassword] = line.split('|');
-    if (storedEmail === email) {
-      return { email: storedEmail, password: storedPassword };
-    }
+  if (cachedToken && now < tokenExpiry) {
+    return cachedToken;
   }
-  return null;
-}
 
-function createUser(email, password) {
-  const existing = findUserByEmail(email);
-  if (existing) return false;
-  fs.appendFileSync(USERS_FILE, `${email}|${password}\n`);
-  return true;
-}
-
-// --- DVLA helper ---
-async function getVehicleFromDVLA(reg) {
-  const url = 'https://driver-vehicle-licensing.api.gov.uk/vehicle-enquiry/v1/vehicles';
-
-  const response = await axios.post(
-    url,
-    { registrationNumber: reg },
-    {
-      headers: {
-        'x-api-key': process.env.DVLA_API_KEY,
-        'Content-Type': 'application/json'
-      }
-    }
-  );
-
-  return response.data;
-}
-
-// --- MOT helpers (Azure AD OAuth2 + public MOT endpoint) ---
-async function getMOTAccessToken() {
-  const params = new URLSearchParams();
-  params.append('grant_type', 'client_credentials');
-  params.append('client_id', process.env.MOT_CLIENT_ID);
-  params.append('client_secret', process.env.MOT_CLIENT_SECRET);
-  params.append('scope', process.env.MOT_SCOPE);
-
-  const response = await axios.post(process.env.MOT_TOKEN_URL, params.toString(), {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-  });
-
-  return response.data.access_token;
-}
-
-async function getMOTHistory(reg) {
-  const token = await getMOTAccessToken();
-
-  const url = `https://history.mot.api.gov.uk/v1/trade/vehicles/registration/${reg}`;
-
-  const response = await axios.get(url, {
+  const tokenRes = await fetch(MOT_TOKEN_URL, {
+    method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
-      'x-api-key': process.env.MOT_API_KEY,
-      Accept: 'application/json'
-    }
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      client_id: MOT_CLIENT_ID,
+      client_secret: MOT_CLIENT_SECRET,
+      scope: MOT_SCOPE,
+      grant_type: "client_credentials"
+    })
   });
 
-  return response.data;
+  const tokenData = await tokenRes.json();
+  console.log("TOKEN:", tokenData);
+
+  if (!tokenData.access_token) {
+    throw new Error("MOT token failed");
+  }
+
+  cachedToken = tokenData.access_token;
+  tokenExpiry = now + (tokenData.expires_in || 3600) * 1000;
+
+  return cachedToken;
 }
 
-function computeMileageStats(vehicle) {
-  const tests = vehicle?.motTests || [];
+/* =========================
+   MAIN API
+========================= */
 
-  if (!tests.length) {
-    return {
-      lastKnownMileage: 'N/A',
-      lastTestDate: 'N/A',
-      averageMileagePerYear: 'N/A',
-      totalTests: 0
-    };
-  }
-
-  tests.sort((a, b) => new Date(a.completedDate) - new Date(b.completedDate));
-
-  const first = tests[0];
-  const last = tests[tests.length - 1];
-
-  const firstMileage = parseInt(first.odometerValue || '0', 10);
-  const lastMileage = parseInt(last.odometerValue || '0', 10);
-
-  const firstDate = new Date(first.completedDate);
-  const lastDate = new Date(last.completedDate);
-
-  const diffYears = (lastDate - firstDate) / (1000 * 60 * 60 * 24 * 365.25) || 1;
-
-  const avg = Math.round((lastMileage - firstMileage) / diffYears);
-
-  return {
-    lastKnownMileage: lastMileage.toLocaleString('en-GB'),
-    lastTestDate: last.completedDate,
-    averageMileagePerYear: avg.toLocaleString('en-GB'),
-    totalTests: tests.length
-  };
-}
-
-// --- Auth routes ---
-app.get('/login', (req, res) => {
-  render(res, 'login', {
-    pageTitle: 'Login - BiismoReg',
-    userEmail: req.session.user?.email || '',
-    error: ''
-  });
-});
-
-app.post('/login', (req, res) => {
-  const { email, password } = req.body;
-  const user = findUserByEmail(email);
-
-  if (!user || user.password !== password) {
-    return render(res, 'login', {
-      pageTitle: 'Login - BiismoReg',
-      userEmail: '',
-      error: '<div class="error">Invalid email or password</div>'
-    });
-  }
-
-  req.session.user = { email };
-  res.redirect('/');
-});
-
-app.get('/signup', (req, res) => {
-  render(res, 'signup', {
-    pageTitle: 'Sign Up - BiismoReg',
-    userEmail: req.session.user?.email || '',
-    error: ''
-  });
-});
-
-app.post('/signup', (req, res) => {
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return render(res, 'signup', {
-      pageTitle: 'Sign Up - BiismoReg',
-      userEmail: '',
-      error: '<div class="error">Email and password are required</div>'
-    });
-  }
-
-  const created = createUser(email, password);
-  if (!created) {
-    return render(res, 'signup', {
-      pageTitle: 'Sign Up - BiismoReg',
-      userEmail: '',
-      error: '<div class="error">User already exists</div>'
-    });
-  }
-
-  req.session.user = { email };
-  res.redirect('/');
-});
-
-app.get('/logout', (req, res) => {
-  req.session.destroy(() => res.redirect('/'));
-});
-
-// --- Main pages ---
-app.get('/', (req, res) => {
-  render(res, 'index', {
-    pageTitle: 'BiismoReg - UK Reg Check',
-    userEmail: req.session.user?.email || '',
-    error: ''
-  });
-});
-
-app.post('/check-reg', async (req, res) => {
-  const reg = (req.body.registration || '').toUpperCase().replace(/\s+/g, '');
-  const userEmail = req.session.user?.email || '';
-
-  if (!reg) {
-    return render(res, 'index', {
-      pageTitle: 'BiismoReg - UK Reg Check',
-      userEmail,
-      error: '<div class="error">Please enter a registration number</div>'
-    });
-  }
-
+app.post("/api/check", async (req, res) => {
   try {
-    const [dvlaData, motData] = await Promise.all([
-      getVehicleFromDVLA(reg),
-      getMOTHistory(reg)
-    ]);
+    const reg = req.body.registrationNumber
+      .toUpperCase()
+      .replace(/\s/g, "");
 
-    const vehicle = Array.isArray(motData) ? motData[0] : motData;
-    const mileageStats = computeMileageStats(vehicle);
+    /* =========================
+       DVLA
+    ========================= */
 
-    const resultHtml = `
-      <h2>Results for ${reg}</h2>
-      <div class="result-grid">
-        <div class="card">
-          <h3>Vehicle details</h3>
-          <p><strong>Make:</strong> ${dvlaData.make}</p>
-          <p><strong>Model:</strong> ${dvlaData.model}</p>
-          <p><strong>Colour:</strong> ${dvlaData.colour}</p>
-          <p><strong>Fuel type:</strong> ${dvlaData.fuelType}</p>
-          <p><strong>Engine capacity:</strong> ${dvlaData.engineCapacity} cc</p>
-          <p><strong>Year of manufacture:</strong> ${dvlaData.yearOfManufacture}</p>
-        </div>
+    const dvlaRes = await fetch(
+      "https://driver-vehicle-licensing.api.gov.uk/vehicle-enquiry/v1/vehicles",
+      {
+        method: "POST",
+        headers: {
+          "x-api-key": DVLA_API_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ registrationNumber: reg })
+      }
+    );
 
-        <div class="card">
-          <h3>Tax & MOT</h3>
-          <p><strong>Tax status:</strong> ${dvlaData.taxStatus}</p>
-          <p><strong>Tax due date:</strong> ${dvlaData.taxDueDate}</p>
-          <p><strong>MOT expiry date:</strong> ${dvlaData.motExpiryDate}</p>
-        </div>
+    const dvla = await dvlaRes.json();
+    console.log("DVLA:", dvla);
 
-        <div class="card">
-          <h3>Mileage stats</h3>
-          <p><strong>Last known mileage:</strong> ${mileageStats.lastKnownMileage}</p>
-          <p><strong>Last MOT test date:</strong> ${mileageStats.lastTestDate}</p>
-          <p><strong>Average mileage per year:</strong> ${mileageStats.averageMileagePerYear}</p>
-          <p><strong>Total MOT tests:</strong> ${mileageStats.totalTests}</p>
-        </div>
+    /* =========================
+       MOT TOKEN
+    ========================= */
 
-        <div class="card">
-          <h3>Raw MOT data</h3>
-          <pre>${JSON.stringify(vehicle, null, 2)}</pre>
-        </div>
-      </div>
-    `;
+    const token = await getMotToken();
 
-    render(res, 'result', {
-      pageTitle: `BiismoReg - ${reg}`,
-      userEmail,
-      result: resultHtml
+    /* =========================
+       MOT FETCH
+    ========================= */
+
+    const motRes = await fetch(
+      `https://history.mot.api.gov.uk/v1/trade/vehicles/registration/${reg}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "x-api-key": MOT_API_KEY,
+          Accept: "application/json"
+        }
+      }
+    );
+
+    const motRaw = await motRes.json();
+    console.log("MOT RAW:", motRaw);
+
+    const vehicle = Array.isArray(motRaw) ? motRaw[0] : motRaw;
+
+    /* =========================
+       MOT HISTORY CLEANUP
+    ========================= */
+
+    const motHistory = (vehicle?.motTests || []).map(test => {
+      const defects = [];
+
+      // OLD FORMAT
+      if (test.rfrAndComments) {
+        test.rfrAndComments.forEach(issue => {
+          defects.push({
+            text: issue.text || "Issue found",
+            type: (issue.type || "ADVISORY").toUpperCase()
+          });
+        });
+      }
+
+      // NEW FORMAT
+      [
+        "advisories",
+        "minorDefects",
+        "majorDefects",
+        "dangerousDefects",
+        "defects",
+        "reasons"
+      ].forEach(key => {
+        if (Array.isArray(test[key])) {
+          test[key].forEach(issue => {
+            defects.push({
+              text:
+                issue.text ||
+                issue.comment ||
+                issue.reason ||
+                issue.description ||
+                "Issue found",
+              type:
+                (
+                  issue.type ||
+                  issue.severity ||
+                  issue.category ||
+                  key.replace("Defects", "")
+                ).toUpperCase()
+            });
+          });
+        }
+      });
+
+      return {
+        completedDate: test.completedDate || null,
+        result: test.testResult || "UNKNOWN",
+        mileage: test.odometerValue || "Unknown",
+        mileageUnit: test.odometerUnit || "mi",
+        defects
+      };
     });
+
+    /* =========================
+       RESPONSE TO FRONTEND
+========================= */
+
+    res.json({
+      registration: reg,
+      make: dvla.make || vehicle?.make || "Unknown",
+      model: dvla.model || vehicle?.model || "Unknown",
+      colour: dvla.colour || "Unknown",
+      fuelType: dvla.fuelType || "Unknown",
+      engineCapacity: dvla.engineCapacity || "Unknown",
+      year: dvla.yearOfManufacture || "Unknown",
+      monthOfFirstRegistration: dvla.monthOfFirstRegistration || "Unknown",
+
+      taxStatus: dvla.taxStatus || "Unknown",
+      taxDueDate: dvla.taxDueDate || null,
+      motExpiryDate: dvla.motExpiryDate || null,
+
+      co2Emissions: dvla.co2Emissions || null,
+      euroStatus: dvla.euroStatus || "Unknown",
+      realDrivingEmissions: dvla.realDrivingEmissions || "Unknown",
+
+      typeApproval: dvla.typeApproval || "Unknown",
+      wheelplan: dvla.wheelplan || "Unknown",
+      revenueWeight: dvla.revenueWeight || "Unknown",
+
+      exportMarker: dvla.exportMarker || false,
+      dateOfLastV5CIssued: dvla.dateOfLastV5CIssued || null,
+
+      motHistory
+    });
+
   } catch (err) {
-    console.log("FULL ERROR:", err.response?.data || err.message);
-    render(res, 'index', {
-      pageTitle: 'BiismoReg - UK Reg Check',
-      userEmail,
-      error: '<div class="error">Unable to fetch data. Check your API credentials.</div>'
+    console.log("SERVER ERROR:", err);
+    res.status(500).json({
+      error: err.message || "Server error"
     });
   }
 });
 
-// --- Start server ---
+/* =========================
+   START
+========================= */
+
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`BiismoReg running on port ${PORT}`);
+  console.log(`Server running on ${PORT}`);
 });
