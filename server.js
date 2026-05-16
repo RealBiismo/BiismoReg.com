@@ -1,163 +1,102 @@
 import express from "express";
-import dotenv from "dotenv";
-import session from "express-session";
-import fs from "fs";
 import path from "path";
+import fs from "fs";
+import session from "express-session";
+import bodyParser from "body-parser";
 import { fileURLToPath } from "url";
 
-dotenv.config();
-
-const app = express();
+/* ============================
+   PATH FIX FOR ES MODULES
+============================ */
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static("public"));
+const app = express();
+
+/* ============================
+   MIDDLEWARE
+============================ */
+
+app.use(bodyParser.json());
 
 app.use(
   session({
-    secret: "biismoreg-secret-key",
+    secret: "biismo-secret-key",
     resave: false,
-    saveUninitialized: false
+    saveUninitialized: false,
   })
 );
 
-/* =========================
-   ENV
-========================= */
+app.use(express.static(path.join(__dirname, "public")));
 
-const DVLA_API_KEY = process.env.DVLA_API_KEY;
-
-const MOT_CLIENT_ID = process.env.MOT_CLIENT_ID;
-const MOT_CLIENT_SECRET = process.env.MOT_CLIENT_SECRET;
-const MOT_API_KEY = process.env.MOT_API_KEY;
-const MOT_SCOPE = process.env.MOT_SCOPE;
-const MOT_TOKEN_URL = process.env.MOT_TOKEN_URL;
-
-/* =========================
-   USERS "DB" (users.txt)
-   Format: email|password
-========================= */
+/* ============================
+   FILE HELPERS
+============================ */
 
 const USERS_FILE = path.join(__dirname, "users.txt");
+const GARAGE_FILE = path.join(__dirname, "garage.txt");
+const RECENT_FILE = path.join(__dirname, "recent.txt");
 
-if (!fs.existsSync(USERS_FILE)) {
-  fs.writeFileSync(USERS_FILE, "");
+function ensureFile(file) {
+  if (!fs.existsSync(file)) fs.writeFileSync(file, "");
 }
 
-function getAllUsers() {
-  const raw = fs.readFileSync(USERS_FILE, "utf8");
-  const lines = raw.split("\n").filter(Boolean);
-  return lines.map(line => {
-    const [email, password] = line.split("|");
-    return { email, password };
-  });
-}
-
-function findUser(email) {
-  return getAllUsers().find(u => u.email === email) || null;
-}
-
-function addUser(email, password) {
-  const users = getAllUsers();
-  if (users.find(u => u.email === email)) {
-    return false;
-  }
-  const line = `${email}|${password}\n`;
-  fs.appendFileSync(USERS_FILE, line);
-  return true;
-}
-
-/* =========================
-   TOKEN CACHE
-========================= */
-
-let cachedToken = null;
-let tokenExpiry = 0;
-
-async function getMotToken() {
-  const now = Date.now();
-
-  if (cachedToken && now < tokenExpiry) {
-    return cachedToken;
-  }
-
-  const tokenRes = await fetch(MOT_TOKEN_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: new URLSearchParams({
-      client_id: MOT_CLIENT_ID,
-      client_secret: MOT_CLIENT_SECRET,
-      scope: MOT_SCOPE,
-      grant_type: "client_credentials"
-    })
-  });
-
-  const tokenData = await tokenRes.json();
-  console.log("TOKEN:", tokenData);
-
-  if (!tokenData.access_token) {
-    throw new Error("MOT token failed");
-  }
-
-  cachedToken = tokenData.access_token;
-  tokenExpiry = now + (tokenData.expires_in || 3600) * 1000;
-
-  return cachedToken;
-}
-
-/* =========================
+/* ============================
    AUTH ROUTES
-========================= */
+============================ */
+
+app.get("/api/me", (req, res) => {
+  res.json({ email: req.session.userEmail || null });
+});
 
 app.post("/api/register", (req, res) => {
-  const email = (req.body.email || "").trim().toLowerCase();
-  const password = (req.body.password || "").trim();
+  const { email, password } = req.body;
 
-  if (!email || !email.includes("@") || !password) {
+  if (!email || !password)
     return res.status(400).json({ error: "Email and password required" });
-  }
 
-  const ok = addUser(email, password);
-  if (!ok) {
+  ensureFile(USERS_FILE);
+  const lines = fs.readFileSync(USERS_FILE, "utf8").split("\n").filter(Boolean);
+
+  if (lines.some(line => line.split("|")[0] === email)) {
     return res.status(400).json({ error: "Account already exists" });
   }
 
+  lines.push(`${email}|${password}`);
+  fs.writeFileSync(USERS_FILE, lines.join("\n"));
+
   req.session.userEmail = email;
-  return res.json({ ok: true, email });
+  res.json({ ok: true });
 });
 
 app.post("/api/login", (req, res) => {
-  const email = (req.body.email || "").trim().toLowerCase();
-  const password = (req.body.password || "").trim();
+  const { email, password } = req.body;
 
-  if (!email || !password) {
+  if (!email || !password)
     return res.status(400).json({ error: "Email and password required" });
-  }
 
-  const user = findUser(email);
-  if (!user || user.password !== password) {
-    return res.status(400).json({ error: "Invalid email or password" });
-  }
+  ensureFile(USERS_FILE);
+  const lines = fs.readFileSync(USERS_FILE, "utf8").split("\n").filter(Boolean);
+
+  const match = lines.find(line => {
+    const [uEmail, uPass] = line.split("|");
+    return uEmail === email && uPass === password;
+  });
+
+  if (!match) return res.status(400).json({ error: "Invalid credentials" });
 
   req.session.userEmail = email;
-  return res.json({ ok: true, email });
+  res.json({ ok: true });
 });
 
 app.post("/api/logout", (req, res) => {
-  req.session.destroy(() => {
-    res.json({ ok: true });
-  });
+  req.session.destroy(() => res.json({ ok: true }));
 });
 
-app.get("/api/me", (req, res) => {
-  const email = req.session.userEmail || null;
-  res.json({ email });
-});
+/* ============================
+   GARAGE ROUTES
+============================ */
 
 app.post("/api/garage/add", (req, res) => {
   const email = req.session.userEmail;
@@ -166,10 +105,8 @@ app.post("/api/garage/add", (req, res) => {
   if (!email) return res.status(401).json({ error: "Not logged in" });
   if (!reg) return res.status(400).json({ error: "No reg provided" });
 
-  const file = path.join(__dirname, "garage.txt");
-  if (!fs.existsSync(file)) fs.writeFileSync(file, "");
-
-  const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
+  ensureFile(GARAGE_FILE);
+  const lines = fs.readFileSync(GARAGE_FILE, "utf8").split("\n").filter(Boolean);
 
   let found = false;
   const updated = lines.map(line => {
@@ -185,7 +122,7 @@ app.post("/api/garage/add", (req, res) => {
 
   if (!found) updated.push(`${email}|${reg}`);
 
-  fs.writeFileSync(file, updated.join("\n"));
+  fs.writeFileSync(GARAGE_FILE, updated.join("\n"));
   res.json({ ok: true });
 });
 
@@ -195,10 +132,8 @@ app.post("/api/garage/remove", (req, res) => {
 
   if (!email) return res.status(401).json({ error: "Not logged in" });
 
-  const file = path.join(__dirname, "garage.txt");
-  if (!fs.existsSync(file)) fs.writeFileSync(file, "");
-
-  const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
+  ensureFile(GARAGE_FILE);
+  const lines = fs.readFileSync(GARAGE_FILE, "utf8").split("\n").filter(Boolean);
 
   const updated = lines.map(line => {
     const [uEmail, list] = line.split("|");
@@ -210,7 +145,7 @@ app.post("/api/garage/remove", (req, res) => {
     return line;
   });
 
-  fs.writeFileSync(file, updated.join("\n"));
+  fs.writeFileSync(GARAGE_FILE, updated.join("\n"));
   res.json({ ok: true });
 });
 
@@ -218,10 +153,8 @@ app.get("/api/garage", (req, res) => {
   const email = req.session.userEmail;
   if (!email) return res.json({ garage: [] });
 
-  const file = path.join(__dirname, "garage.txt");
-  if (!fs.existsSync(file)) return res.json({ garage: [] });
-
-  const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
+  ensureFile(GARAGE_FILE);
+  const lines = fs.readFileSync(GARAGE_FILE, "utf8").split("\n").filter(Boolean);
 
   for (const line of lines) {
     const [uEmail, list] = line.split("|");
@@ -233,16 +166,18 @@ app.get("/api/garage", (req, res) => {
   res.json({ garage: [] });
 });
 
+/* ============================
+   RECENT SEARCHES ROUTES
+============================ */
+
 app.post("/api/recent/add", (req, res) => {
   const email = req.session.userEmail;
   const reg = (req.body.reg || "").toUpperCase();
 
   if (!email) return res.status(401).json({ error: "Not logged in" });
 
-  const file = path.join(__dirname, "recent.txt");
-  if (!fs.existsSync(file)) fs.writeFileSync(file, "");
-
-  const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
+  ensureFile(RECENT_FILE);
+  const lines = fs.readFileSync(RECENT_FILE, "utf8").split("\n").filter(Boolean);
 
   let found = false;
   const updated = lines.map(line => {
@@ -250,9 +185,9 @@ app.post("/api/recent/add", (req, res) => {
     if (uEmail === email) {
       found = true;
       let arr = list ? list.split(",") : [];
-      arr = arr.filter(v => v !== reg); // remove duplicates
-      arr.unshift(reg); // add to front
-      arr = arr.slice(0, 10); // keep last 10
+      arr = arr.filter(v => v !== reg);
+      arr.unshift(reg);
+      arr = arr.slice(0, 10);
       return `${email}|${arr.join(",")}`;
     }
     return line;
@@ -260,7 +195,7 @@ app.post("/api/recent/add", (req, res) => {
 
   if (!found) updated.push(`${email}|${reg}`);
 
-  fs.writeFileSync(file, updated.join("\n"));
+  fs.writeFileSync(RECENT_FILE, updated.join("\n"));
   res.json({ ok: true });
 });
 
@@ -268,10 +203,8 @@ app.get("/api/recent", (req, res) => {
   const email = req.session.userEmail;
   if (!email) return res.json({ recent: [] });
 
-  const file = path.join(__dirname, "recent.txt");
-  if (!fs.existsSync(file)) return res.json({ recent: [] });
-
-  const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
+  ensureFile(RECENT_FILE);
+  const lines = fs.readFileSync(RECENT_FILE, "utf8").split("\n").filter(Boolean);
 
   for (const line of lines) {
     const [uEmail, list] = line.split("|");
@@ -283,132 +216,124 @@ app.get("/api/recent", (req, res) => {
   res.json({ recent: [] });
 });
 
-
-/* =========================
-   MAIN VEHICLE API
-========================= */
+/* ============================
+   DVLA + MOT API CHECK ROUTE
+============================ */
 
 app.post("/api/check", async (req, res) => {
-  try {
-    const reg = req.body.registrationNumber
-      ?.toUpperCase()
-      .replace(/\s/g, "");
+  const { registrationNumber } = req.body;
 
-    if (!reg) {
-      return res.status(400).json({ error: "Registration required" });
+  if (!registrationNumber) {
+    return res.status(400).json({ error: "Registration number is required" });
+  }
+
+  try {
+    /* ============================
+       DVLA VEHICLE ENQUIRY API
+    ============================= */
+
+    const dvlaResponse = await fetch("https://driver-vehicle-licensing.api.gov.uk/vehicle-enquiry/v1/vehicles", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.DVLA_API_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ registrationNumber })
+    });
+
+    const dvlaData = await dvlaResponse.json();
+
+    if (!dvlaResponse.ok) {
+      return res.status(400).json({ error: dvlaData.message || "DVLA lookup failed" });
     }
 
-    // DVLA
-    const dvlaRes = await fetch(
-      "https://driver-vehicle-licensing.api.gov.uk/vehicle-enquiry/v1/vehicles",
-      {
-        method: "POST",
-        headers: {
-          "x-api-key": DVLA_API_KEY,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ registrationNumber: reg })
+    /* ============================
+       DVSA MOT HISTORY API
+    ============================= */
+
+    // 1. Get OAuth token
+    const tokenResponse = await fetch(process.env.MOT_TOKEN_URL, {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + Buffer.from(`${process.env.MOT_CLIENT_ID}:${process.env.MOT_CLIENT_SECRET}`).toString("base64"),
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: `grant_type=client_credentials&scope=${process.env.MOT_SCOPE}`
+    });
+
+    const tokenData = await tokenResponse.json();
+
+    if (!tokenResponse.ok) {
+      return res.status(400).json({ error: "Failed to authenticate with MOT API" });
+    }
+
+    const accessToken = tokenData.access_token;
+
+    // 2. Fetch MOT history
+    const motResponse = await fetch(`https://beta.check-mot.service.gov.uk/trade/vehicles/mot-tests?registration=${registrationNumber}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "x-api-key": process.env.MOT_API_KEY
       }
-    );
+    });
 
-    const dvla = await dvlaRes.json();
-    console.log("DVLA:", dvla);
+    const motData = await motResponse.json();
 
-    // MOT TOKEN
-    const token = await getMotToken();
+    if (!motResponse.ok) {
+      return res.status(400).json({ error: "MOT lookup failed" });
+    }
 
-    // MOT FETCH
-    const motRes = await fetch(
-      `https://history.mot.api.gov.uk/v1/trade/vehicles/registration/${reg}`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "x-api-key": MOT_API_KEY,
-          Accept: "application/json"
-        }
-      }
-    );
+    /* ============================
+       NORMALISE DEFECTS
+    ============================= */
 
-    const motRaw = await motRes.json();
-    console.log("MOT RAW:", motRaw);
-
-    const vehicle = Array.isArray(motRaw) ? motRaw[0] : motRaw;
-
-    const motHistory = (vehicle?.motTests || []).map(test => {
+    const normalisedHistory = (motData || []).map(test => {
       const defects = [];
 
-      if (test.rfrAndComments) {
-        test.rfrAndComments.forEach(issue => {
-          defects.push({
-            text: issue.text || "Issue found",
-            type: (issue.type || "ADVISORY").toUpperCase()
-          });
-        });
-      }
-
-      [
-        "advisories",
-        "minorDefects",
-        "majorDefects",
-        "dangerousDefects",
-        "defects",
-        "reasons"
-      ].forEach(key => {
-        if (Array.isArray(test[key])) {
-          test[key].forEach(issue => {
-            defects.push({
-              text:
-                issue.text ||
-                issue.comment ||
-                issue.reason ||
-                issue.description ||
-                "Issue found",
-              type:
-                (
-                  issue.type ||
-                  issue.severity ||
-                  issue.category ||
-                  key.replace("Defects", "")
-                ).toUpperCase()
-            });
-          });
+      const add = (items, type) => {
+        if (Array.isArray(items)) {
+          items.forEach(d => defects.push({ type, text: d.text || d.reason || d.comment || "Unknown defect" }));
         }
-      });
+      };
+
+      add(test.rfrAndComments, "ADVISORY");
+      add(test.advisories, "ADVISORY");
+      add(test.minorDefects, "MINOR");
+      add(test.majorDefects, "MAJOR");
+      add(test.dangerousDefects, "DANGEROUS");
+      add(test.defects, "MAJOR");
+      add(test.reasons, "MAJOR");
 
       return {
-        completedDate: test.completedDate || null,
-        result: test.testResult || "UNKNOWN",
-        mileage: test.odometerValue || "Unknown",
-        mileageUnit: test.odometerUnit || "mi",
+        ...test,
         defects
       };
     });
 
+    /* ============================
+       FINAL RESPONSE
+    ============================= */
+
     res.json({
-      registration: reg,
-      make: dvla.make || vehicle?.make || "Unknown",
-      model: dvla.model || vehicle?.model || "Unknown",
-      colour: dvla.colour || "Unknown",
-      fuelType: dvla.fuelType || "Unknown",
-      engineCapacity: dvla.engineCapacity || "Unknown",
-      year: dvla.yearOfManufacture || "Unknown",
-      taxStatus: dvla.taxStatus || "Unknown",
-      taxDueDate: dvla.taxDueDate || null,
-      motExpiryDate: dvla.motExpiryDate || null,
-      motHistory
+      registration: dvlaData.registrationNumber,
+      make: dvlaData.make,
+      model: dvlaData.model,
+      colour: dvlaData.colour,
+      fuelType: dvlaData.fuelType,
+      engineCapacity: dvlaData.engineCapacity,
+      year: dvlaData.yearOfManufacture,
+      taxStatus: dvlaData.taxStatus,
+      taxDueDate: dvlaData.taxDueDate,
+      motExpiryDate: dvlaData.motExpiryDate,
+      motHistory: normalisedHistory
     });
 
   } catch (err) {
-    console.log("SERVER ERROR:", err);
-    res.status(500).json({
-      error: err.message || "Server error"
-    });
+    console.error("Server error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-/* =========================
-   START
-========================= */
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
