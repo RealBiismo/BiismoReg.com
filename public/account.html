@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Account - BIISMO REG</title>
+
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="https://files.catbox.moe/ulokbl.png">
+</head>
+
+<body>
+
+  <nav class="nav">
+    <img src="https://files.catbox.moe/tvw8fb.png" alt="" class="logo">
+  </nav>
+
+  <section class="account-header">
+    <h1>My Account</h1>
+    <div id="tierBadge" class="tier-badge free">Free Tier</div>
+    <p id="accountEmail" style="margin-top:8px;color:#666;"></p>
+    <button class="login-btn" onclick="logout()">Logout</button>
+  </section>
+
+  <section class="garage-section">
+    <h2>My Garage</h2>
+    <div id="garageGrid" class="garage-grid">
+      <!-- Filled by JS -->
+    </div>
+  </section>
+
+  <section class="recent-section">
+    <h2>Recently Viewed</h2>
+    <div id="recentList">
+      <!-- Filled by JS -->
+    </div>
+  </section>
+
+  <section class="subscription-panel">
+    <h2>Your Subscription</h2>
+    <p id="tierText">You are currently on the Free tier.</p>
+    <button class="upgrade-btn" onclick="upgradeTier('premium')">Upgrade to Premium</button>
+    <button class="see-platinum-btn" onclick="upgradeTier('platinum')">Go Platinum</button>
+  </section>
+
+  <script src="script.js"></script>
+</body>
+</html>
