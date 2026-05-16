@@ -5,7 +5,7 @@ dotenv.config();
 
 const app = express();
 app.use(express.json());
-app.use(express.static("public"));
+app.use(express.static("public")); // serves index.html, style.css, script.js
 
 /* =========================
    ENV
@@ -70,13 +70,14 @@ async function getMotToken() {
 app.post("/api/check", async (req, res) => {
   try {
     const reg = req.body.registrationNumber
-      .toUpperCase()
+      ?.toUpperCase()
       .replace(/\s/g, "");
 
-    /* =========================
-       DVLA
-    ========================= */
+    if (!reg) {
+      return res.status(400).json({ error: "Registration required" });
+    }
 
+    // DVLA
     const dvlaRes = await fetch(
       "https://driver-vehicle-licensing.api.gov.uk/vehicle-enquiry/v1/vehicles",
       {
@@ -92,16 +93,10 @@ app.post("/api/check", async (req, res) => {
     const dvla = await dvlaRes.json();
     console.log("DVLA:", dvla);
 
-    /* =========================
-       MOT TOKEN
-    ========================= */
-
+    // MOT TOKEN
     const token = await getMotToken();
 
-    /* =========================
-       MOT FETCH
-    ========================= */
-
+    // MOT FETCH
     const motRes = await fetch(
       `https://history.mot.api.gov.uk/v1/trade/vehicles/registration/${reg}`,
       {
@@ -117,10 +112,6 @@ app.post("/api/check", async (req, res) => {
     console.log("MOT RAW:", motRaw);
 
     const vehicle = Array.isArray(motRaw) ? motRaw[0] : motRaw;
-
-    /* =========================
-       MOT HISTORY CLEANUP
-========================= */
 
     const motHistory = (vehicle?.motTests || []).map(test => {
       const defects = [];
@@ -171,10 +162,6 @@ app.post("/api/check", async (req, res) => {
         defects
       };
     });
-
-    /* =========================
-       RESPONSE
-========================= */
 
     res.json({
       registration: reg,
