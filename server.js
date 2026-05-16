@@ -1,11 +1,28 @@
 import express from "express";
 import dotenv from "dotenv";
+import session from "express-session";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 dotenv.config();
 
 const app = express();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 app.use(express.json());
-app.use(express.static("public")); // serves index.html, style.css, script.js
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static("public"));
+
+app.use(
+  session({
+    secret: "biismoreg-secret-key",
+    resave: false,
+    saveUninitialized: false
+  })
+);
 
 /* =========================
    ENV
@@ -18,6 +35,58 @@ const MOT_CLIENT_SECRET = process.env.MOT_CLIENT_SECRET;
 const MOT_API_KEY = process.env.MOT_API_KEY;
 const MOT_SCOPE = process.env.MOT_SCOPE;
 const MOT_TOKEN_URL = process.env.MOT_TOKEN_URL;
+
+/* =========================
+   USERS "DB" (users.txt)
+   Format: email|tier
+========================= */
+
+const USERS_FILE = path.join(__dirname, "users.txt");
+
+if (!fs.existsSync(USERS_FILE)) {
+  fs.writeFileSync(USERS_FILE, "");
+}
+
+function getAllUsers() {
+  const raw = fs.readFileSync(USERS_FILE, "utf8");
+  const lines = raw.split("\n").filter(Boolean);
+  return lines.map(line => {
+    const [email, tier] = line.split("|");
+    return { email, tier: tier || "free" };
+  });
+}
+
+function findUser(email) {
+  return getAllUsers().find(u => u.email === email) || null;
+}
+
+function upsertUser(email, tier = "free") {
+  const users = getAllUsers();
+  const existingIndex = users.findIndex(u => u.email === email);
+
+  if (existingIndex >= 0) {
+    users[existingIndex].tier = tier;
+  } else {
+    users.push({ email, tier });
+  }
+
+  const content = users.map(u => `${u.email}|${u.tier}`).join("\n") + "\n";
+  fs.writeFileSync(USERS_FILE, content);
+}
+
+/* =========================
+   IN-MEMORY STATE
+   My Garage & Recently Viewed
+========================= */
+
+const userState = {}; // { [email]: { garage: [], recent: [] } }
+
+function getUserState(email) {
+  if (!userState[email]) {
+    userState[email] = { garage: [], recent: [] };
+  }
+  return userState[email];
+}
 
 /* =========================
    TOKEN CACHE
@@ -64,7 +133,125 @@ async function getMotToken() {
 }
 
 /* =========================
-   MAIN API
+   AUTH ROUTES
+========================= */
+
+// Magic-link style: email only, no password.
+// Creates user if not exists, logs in, default tier "free".
+app.post("/api/login-link", (req, res) => {
+  const email = (req.body.email || "").trim().toLowerCase();
+
+  if (!email || !email.includes("@")) {
+    return res.status(400).json({ error: "Valid email required" });
+  }
+
+  let user = findUser(email);
+  if (!user) {
+    upsertUser(email, "free");
+    user = { email, tier: "free" };
+  }
+
+  req.session.userEmail = email;
+
+  return res.json({
+    ok: true,
+    email: user.email,
+    tier: user.tier
+  });
+});
+
+app.post("/api/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.json({ ok: true });
+  });
+});
+
+app.get("/api/me", (req, res) => {
+  const email = req.session.userEmail;
+  if (!email) {
+    return res.json({ email: null });
+  }
+
+  const user = findUser(email) || { email, tier: "free" };
+  return res.json({
+    email: user.email,
+    tier: user.tier
+  });
+});
+
+// Simple upgrade endpoint (no payments, just demo)
+app.post("/api/upgrade", (req, res) => {
+  const email = req.session.userEmail;
+  const tier = req.body.tier;
+
+  if (!email) {
+    return res.status(401).json({ error: "Not logged in" });
+  }
+
+  if (!["free", "premium", "platinum"].includes(tier)) {
+    return res.status(400).json({ error: "Invalid tier" });
+  }
+
+  upsertUser(email, tier);
+  return res.json({ ok: true, tier });
+});
+
+/* =========================
+   GARAGE & RECENT ROUTES
+========================= */
+
+app.post("/api/garage/add", (req, res) => {
+  const email = req.session.userEmail;
+  if (!email) {
+    return res.status(401).json({ error: "Not logged in" });
+  }
+
+  const { registration, make, model, motExpiryDate, taxStatus } = req.body;
+
+  if (!registration) {
+    return res.status(400).json({ error: "Registration required" });
+  }
+
+  const state = getUserState(email);
+  const exists = state.garage.find(
+    v => v.registration === registration.toUpperCase()
+  );
+
+  if (!exists) {
+    state.garage.push({
+      registration: registration.toUpperCase(),
+      make: make || "Unknown",
+      model: model || "Unknown",
+      motExpiryDate: motExpiryDate || null,
+      taxStatus: taxStatus || "Unknown"
+    });
+  }
+
+  return res.json({ ok: true, garage: state.garage });
+});
+
+app.get("/api/garage", (req, res) => {
+  const email = req.session.userEmail;
+  if (!email) {
+    return res.status(401).json({ error: "Not logged in" });
+  }
+
+  const state = getUserState(email);
+  return res.json({ garage: state.garage });
+});
+
+app.get("/api/recent", (req, res) => {
+  const email = req.session.userEmail;
+  if (!email) {
+    return res.status(401).json({ error: "Not logged in" });
+  }
+
+  const state = getUserState(email);
+  return res.json({ recent: state.recent || [] });
+});
+
+/* =========================
+   MAIN VEHICLE API
 ========================= */
 
 app.post("/api/check", async (req, res) => {
@@ -163,7 +350,7 @@ app.post("/api/check", async (req, res) => {
       };
     });
 
-    res.json({
+    const responseData = {
       registration: reg,
       make: dvla.make || vehicle?.make || "Unknown",
       model: dvla.model || vehicle?.model || "Unknown",
@@ -174,7 +361,28 @@ app.post("/api/check", async (req, res) => {
       taxStatus: dvla.taxStatus || "Unknown",
       motExpiryDate: dvla.motExpiryDate || null,
       motHistory
-    });
+    };
+
+    // RECENTLY VIEWED (if logged in)
+    const email = req.session.userEmail;
+    if (email) {
+      const state = getUserState(email);
+      const summary = {
+        registration: responseData.registration,
+        make: responseData.make,
+        model: responseData.model,
+        motExpiryDate: responseData.motExpiryDate,
+        taxStatus: responseData.taxStatus
+      };
+
+      state.recent = state.recent || [];
+      state.recent = [
+        summary,
+        ...state.recent.filter(v => v.registration !== summary.registration)
+      ].slice(0, 10);
+    }
+
+    res.json(responseData);
 
   } catch (err) {
     console.log("SERVER ERROR:", err);
@@ -182,6 +390,15 @@ app.post("/api/check", async (req, res) => {
       error: err.message || "Server error"
     });
   }
+});
+
+/* =========================
+   ACCOUNT PAGE ROUTE
+========================= */
+
+app.get("/account", (req, res) => {
+  const filePath = path.join(__dirname, "public", "account.html");
+  res.sendFile(filePath);
 });
 
 /* =========================
