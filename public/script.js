@@ -176,5 +176,4 @@ function buildDefects(defects) {
   return html;
 }
 
-// expose for button onclick in index.html
 window.checkVehicle = checkVehicle;
