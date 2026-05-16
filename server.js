@@ -232,19 +232,24 @@ app.post("/api/check", async (req, res) => {
        DVLA VEHICLE ENQUIRY API
     ============================= */
 
-    const dvlaResponse = await fetch("https://driver-vehicle-licensing.api.gov.uk/vehicle-enquiry/v1/vehicles", {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.DVLA_API_KEY,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ registrationNumber })
-    });
+    const dvlaResponse = await fetch(
+      "https://driver-vehicle-licensing.api.gov.uk/vehicle-enquiry/v1/vehicles",
+      {
+        method: "POST",
+        headers: {
+          "x-api-key": process.env.DVLA_API_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ registrationNumber })
+      }
+    );
 
     const dvlaData = await dvlaResponse.json();
 
     if (!dvlaResponse.ok) {
-      return res.status(400).json({ error: dvlaData.message || "DVLA lookup failed" });
+      return res.status(400).json({
+        error: dvlaData.message || "DVLA lookup failed"
+      });
     }
 
     /* ============================
@@ -255,7 +260,11 @@ app.post("/api/check", async (req, res) => {
     const tokenResponse = await fetch(process.env.MOT_TOKEN_URL, {
       method: "POST",
       headers: {
-        Authorization: "Basic " + Buffer.from(`${process.env.MOT_CLIENT_ID}:${process.env.MOT_CLIENT_SECRET}`).toString("base64"),
+        Authorization:
+          "Basic " +
+          Buffer.from(
+            `${process.env.MOT_CLIENT_ID}:${process.env.MOT_CLIENT_SECRET}`
+          ).toString("base64"),
         "Content-Type": "application/x-www-form-urlencoded"
       },
       body: `grant_type=client_credentials&scope=${process.env.MOT_SCOPE}`
@@ -264,18 +273,23 @@ app.post("/api/check", async (req, res) => {
     const tokenData = await tokenResponse.json();
 
     if (!tokenResponse.ok) {
-      return res.status(400).json({ error: "Failed to authenticate with MOT API" });
+      return res
+        .status(400)
+        .json({ error: "Failed to authenticate with MOT API" });
     }
 
     const accessToken = tokenData.access_token;
 
-    // 2. Fetch MOT history
-    const motResponse = await fetch(`https://check-mot.service.gov.uk/trade/vehicles/mot-tests?registration=${registrationNumber}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "x-api-key": process.env.MOT_API_KEY
+    // 2. Fetch MOT history (UPDATED URL)
+    const motResponse = await fetch(
+      `https://check-mot.service.gov.uk/trade/vehicles/mot-tests?registration=${registrationNumber}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "x-api-key": process.env.MOT_API_KEY
+        }
       }
-    });
+    );
 
     const motData = await motResponse.json();
 
@@ -292,7 +306,12 @@ app.post("/api/check", async (req, res) => {
 
       const add = (items, type) => {
         if (Array.isArray(items)) {
-          items.forEach(d => defects.push({ type, text: d.text || d.reason || d.comment || "Unknown defect" }));
+          items.forEach(d =>
+            defects.push({
+              type,
+              text: d.text || d.reason || d.comment || "Unknown defect"
+            })
+          );
         }
       };
 
@@ -327,7 +346,6 @@ app.post("/api/check", async (req, res) => {
       motExpiryDate: dvlaData.motExpiryDate,
       motHistory: normalisedHistory
     });
-
   } catch (err) {
     console.error("Server error:", err);
     res.status(500).json({ error: "Internal server error" });
