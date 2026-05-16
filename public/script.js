@@ -53,7 +53,7 @@ function formatDate(dateString) {
   return `${day}.${month}.${year} ${hours}:${minutes}${ampm}`;
 }
 
-function formatMiles(value, unit) {
+function formatMiles(value) {
   if (!value) return "Unknown";
   const miles = Number(value).toLocaleString("en-UK");
   return `${miles} miles`;
@@ -64,21 +64,34 @@ function formatMiles(value, unit) {
 ============================ */
 
 function renderResult(data) {
+  const today = new Date();
+
   /* TAX STATUS */
   let taxClass = "tax-red";
   let taxText = data.taxStatus || "Unknown";
+  let taxDays = "";
+  let taxColor = "mot-red";
 
   if (taxText.toLowerCase().includes("taxed")) {
     taxClass = "tax-green";
+    taxColor = "mot-green";
+
+    const expiry = data.taxDueDate ? new Date(data.taxDueDate) : null;
+    if (expiry) {
+      const diff = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+      taxDays =
+        diff > 0
+          ? `${diff} day${diff === 1 ? "" : "s"} remaining`
+          : `Expired (${Math.abs(diff)} day${diff === -1 ? "" : "s"} ago)`;
+    }
   } else if (taxText.toLowerCase().includes("sorn")) {
     taxClass = "tax-red";
     taxText = "SORN";
+    taxDays = "SORN (off road)";
   }
 
   /* MOT STATUS */
-  const today = new Date();
   const motExpiry = data.motExpiryDate ? new Date(data.motExpiryDate) : null;
-
   let motStatus = "Unknown";
   let motColor = "mot-red";
 
@@ -87,7 +100,6 @@ function renderResult(data) {
     motColor = "mot-green";
   } else {
     const diff = Math.ceil((motExpiry - today) / (1000 * 60 * 60 * 24));
-
     if (diff > 0) {
       motStatus = `${diff} day${diff === 1 ? "" : "s"} remaining`;
       motColor = "mot-green";
@@ -134,18 +146,20 @@ function renderResult(data) {
         </div>
 
         <div class="info-box">
-          <div class="info-title">MOT Expiry</div>
-          <div class="info-value">${formatDate(data.motExpiryDate)}</div>
-        </div>
-
-        <div class="info-box">
           <div class="info-title">MOT Status</div>
           <div class="info-value ${motColor}">${motStatus}</div>
         </div>
 
-      </div>
+        ${
+          taxDays
+            ? `<div class="info-box">
+                <div class="info-title">Tax Renewal</div>
+                <div class="info-value ${taxColor}">${taxDays}</div>
+              </div>`
+            : ""
+        }
 
-      <p class="scroll-hint">Swipe to view more →</p>
+      </div>
 
       <div style="margin-top:24px;">
         <h3 style="margin-bottom:10px;">MOT History</h3>
@@ -176,7 +190,7 @@ function buildMotCards(tests) {
             ${isPass ? "PASS" : "FAIL"}
           </div>
           <div style="margin-top:6px;">Date: ${formatDate(test.completedDate)}</div>
-          <div>Mileage: ${formatMiles(test.mileage, test.mileageUnit)}</div>
+          <div>Mileage: ${formatMiles(test.mileage)}</div>
           ${defectsHtml}
         </div>
       `;
