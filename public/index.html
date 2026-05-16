@@ -16,9 +16,8 @@
     <img src="https://files.catbox.moe/tvw8fb.png" alt="" class="logo">
   </nav>
 
-  <div style="display:flex;justify-content:center;gap:10px;margin-top:10px;">
+  <div class="top-buttons">
     <button id="loginBtn" class="login-btn">Login / Create Account</button>
-    <button id="accountBtn" class="login-btn" style="display:none;" onclick="goToAccount()">My Account</button>
   </div>
 
   <div class="hero">
@@ -50,22 +49,30 @@
 
   <div id="result"></div>
 
-  <script src="script.js"></script>
-
-  <!-- LOGIN MODAL -->
+  <!-- LOGIN / REGISTER MODAL -->
   <div id="loginModal" class="modal">
     <div class="modal-content">
-      <h2>Login / Create Account</h2>
-      <p>Enter your email to receive a login link.</p>
+      <button class="modal-close" id="closeModalBtn">✕</button>
+      <h2 id="modalTitle">Login</h2>
 
-      <input type="email" id="loginEmail" placeholder="you@example.com">
+      <div class="tab-row">
+        <button id="tabLogin" class="tab active">Login</button>
+        <button id="tabRegister" class="tab">Register</button>
+      </div>
 
-      <button id="sendLoginLinkBtn">Send Login Link</button>
-      <button id="closeModalBtn" class="close-btn">Cancel</button>
+      <div class="modal-body">
+        <input type="email" id="authEmail" placeholder="you@example.com">
+        <input type="password" id="authPassword" placeholder="Password">
 
-      <p id="loginStatus" class="status-message"></p>
+        <button id="authSubmitBtn">Login</button>
+
+        <button id="forgotBtn" class="link-btn">Forgot password?</button>
+
+        <p id="authStatus" class="status-message"></p>
+      </div>
     </div>
   </div>
 
+  <script src="script.js"></script>
 </body>
 </html>
