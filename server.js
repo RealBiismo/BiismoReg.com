@@ -189,6 +189,31 @@ app.post("/api/garage/add", (req, res) => {
   res.json({ ok: true });
 });
 
+app.post("/api/garage/remove", (req, res) => {
+  const email = req.session.userEmail;
+  const reg = (req.body.reg || "").toUpperCase();
+
+  if (!email) return res.status(401).json({ error: "Not logged in" });
+
+  const file = path.join(__dirname, "garage.txt");
+  if (!fs.existsSync(file)) fs.writeFileSync(file, "");
+
+  const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
+
+  const updated = lines.map(line => {
+    const [uEmail, list] = line.split("|");
+    if (uEmail === email) {
+      const arr = list ? list.split(",") : [];
+      const filtered = arr.filter(v => v !== reg);
+      return `${email}|${filtered.join(",")}`;
+    }
+    return line;
+  });
+
+  fs.writeFileSync(file, updated.join("\n"));
+  res.json({ ok: true });
+});
+
 /* =========================
    MAIN VEHICLE API
 ========================= */
