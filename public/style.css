@@ -463,3 +463,27 @@ button:hover {
   font-weight: 700;
 }
 
+
+@media (max-width: 480px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .info-box {
+    padding: 10px;
+    min-height: 70px;
+  }
+
+  .result-reg {
+    font-size: 26px;
+    padding: 6px 14px;
+  }
+
+  .car-title {
+    font-size: 20px;
+  }
+
+  .modal-content {
+    width: 92%;
+  }
+}
